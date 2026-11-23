@@ -40,55 +40,17 @@ PYTHONPATH=. python3 src/inference_one_seq.py --config configs/inference.yaml
 
 ## Model Architecture
 
+![ContactNet Progressive CNN-GRU Architecture](figures/contactnet_architecture.png)
+
 | Component | Configuration |
 | :--- | :--- |
 | Input shape | $150 \times 48$ ($0.15\text{ s}$ at $1\text{ kHz}$) |
 | Convolutional blocks | 3 ($48 \rightarrow 64 \rightarrow 128 \rightarrow 256$) |
-| Early GRU branch | Hidden size $64$ (after CNN Block 2) |
-| Late GRU branch | Hidden size $64$ (after CNN Block 3) |
+| Early GRU branch | Hidden size $64$ ($T = T/2$) |
+| Late GRU branch | Hidden size $64$ ($T = T/8$) |
 | Fused representation | $128$ features |
 | Classification head | $128 \rightarrow 512 \rightarrow 256 \rightarrow 16$ classes |
-
-```text
-Input Sequence (B, 150, 48)
-           |
-           v
-   CNN Block 1 (48 -> 64)
-           |
-           v
-   CNN Block 2 (64 -> 128)
-           |
-           +----------------------+
-           |                      |
-           v                      v
-  Early GRU (128 -> 64)   CNN Block 3 (128 -> 256)
-           |                      |
-           |                      v
-           |              Late GRU (256 -> 64)
-           |                      |
-           +----------+-----------+
-                      |
-                      v
-        Concatenation (128 Features)
-                      |
-                      v
-         Classifier (128 -> 512 -> 256)
-                      |
-                      v
-                  16 Classes
-```
-
-### 48D Input Representation
-
-| Feature Group | Dimensions | Description |
-| :--- | :---: | :--- |
-| Joint positions ($q$) | 12 | Actuated joint angles |
-| Joint velocities ($\dot{q}$) | 12 | Actuated joint angular velocities |
-| Foot positions ($p_f$) | 12 | Body-frame end-effector positions |
-| Foot velocities ($v_f$) | 12 | Body-frame end-effector velocities |
-| **Total** | **48** | **Leg-local proprioceptive features (IMU excluded)** |
-
----
+| Loss function | Focal Loss (4-bit contact vector: `LF, RF, LH, RH`) |
 
 ## Experimental Results & Sim-to-Real Analysis
 
