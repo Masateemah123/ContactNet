@@ -17,7 +17,17 @@ In the recorded Unitree ROS1 bags (`/unitree/raw_contact`), raw pneumatic foot-c
 python3 thresholding.py --bag_file data/raw_bags/trial.bag --output_csv improved_contact_labels.csv
 ```
 
-![Contact Verification Summary](figures/contact_verification_summary.png)
+### Before vs. After Contact Conditioning (Concrete & Asphalt Trials)
+
+| **Raw Sensor Signal (Unconditioned Concrete)** | **Conditioned Contact Labels (Concrete)** |
+| :---: | :---: |
+| ![Raw Concrete Contact](figures/concrete_raw_contact_baseline.png) | ![Conditioned Concrete Contact](figures/concrete_conditioned_contact.png) |
+
+### High-Vibration Terrain Conditioning (Asphalt Hysteresis & Multi-Leg Summary)
+
+| **Asphalt Dual-Threshold Hysteresis** | **Multi-Leg Conditioning Verification Summary** |
+| :---: | :---: |
+| ![Asphalt Threshold Hysteresis](figures/asphalt_threshold_hysteresis.png) | ![Contact Verification Summary](figures/contact_verification_summary.png) |
 
 ---
 
