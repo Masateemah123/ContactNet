@@ -4,372 +4,218 @@
 
 ContactNet is a deep learning framework for estimating foot-contact states in quadrupedal robots using proprioceptive measurements.
 
-Developed as part of graduate research at the **University of São Paulo (USP), Brazil**, ContactNet extends an existing CNN-based contact estimation framework to the **Unitree Go1 quadruped** through recurrent temporal modelling, robot-specific data acquisition and processing, and independent model training and evaluation.
+Developed as part of graduate research at the **University of São Paulo (USP), Brazil**, ContactNet extends CNN-based contact estimation to the **Unitree Go1** and **Unitree Go2** quadrupeds through multi-scale recurrent temporal modelling, robot-specific data acquisition and processing, and independent model training and evaluation.
 
-The framework introduces a Progressive CNN-GRU architecture that combines convolutional feature extraction with recurrent temporal modelling at multiple feature extraction stages. It estimates the contact configuration of the robot's four legs using proprioceptive measurements, without requiring IMU measurements as network inputs.
-
----
-
-## Overview
-
-Foot-contact estimation is an important component of legged robot state estimation and locomotion. Reliable identification of contact states provides information about the interaction between a robot and its environment, supporting state estimation and contact-aware locomotion.
-
-ContactNet investigates learning-based contact estimation using temporal sequences of proprioceptive measurements collected from a Unitree Go1 quadruped.
-
-Unlike the original CNN-based implementation on which this work builds, ContactNet introduces recurrent GRU branches to capture temporal dependencies at different levels of convolutional feature extraction.
-
-The network predicts one of 16 possible contact configurations, representing the binary contact states of the four robot legs.
-
-### Key Features
-
-- Adaptation of an existing CNN-based contact estimation framework to the Unitree Go1.
-- Progressive CNN-GRU architecture with early and late recurrent branches.
-- Multi-scale temporal feature fusion.
-- Proprioceptive-only input representation with 48 features.
-- Temporal sequence processing using 150-sample windows.
-- ROS bag-based robot data acquisition and processing.
-- Four-leg contact configuration classification.
-- Individual-leg contact evaluation.
+The framework introduces a **Progressive CNN-GRU** architecture that combines convolutional feature extraction with early and late GRU branches. It predicts one of **16 possible contact configurations** ($2^4$ binary contact combinations across the four legs) using **48-dimensional leg-local proprioceptive measurements**, without requiring base IMU measurements as network inputs.
 
 ---
 
-## Research Contributions
+## Key Features
 
-ContactNet extends the original Deep Contact Estimator framework through the following research and engineering contributions.
+- **Progressive CNN-GRU Architecture:** Integrates early and late recurrent branches at intermediate convolutional depths to capture both short-duration impact transients and sustained stance dynamics.
+- **IMU-Independent 48D Input Representation:** Uses joint positions, joint velocities, body-frame foot positions, and body-frame foot velocities ($150$-sample window at $1\text{ kHz}$), eliminating terrain-coupled IMU bias drift.
+- **ROS Bag Acquisition & Signal Conditioning:** Extracts `/estimated_robot_state`, transforms end-effector kinematics into the robot body frame, and conditions ground-truth labels via Otsu thresholding, hysteresis stabilization, and minimum-duration filtering.
+- **Dual-Level Evaluation:** Assesses performance across both 16-class contact configurations and individual legs (`RF`, `LF`, `RH`, `LH`).
 
-### 1. Cross-platform adaptation
+---
 
-Adaptation of the original CNN-based contact estimation framework, developed for the MIT Cheetah platform, to the Unitree Go1 quadruped.
+## Quickstart
 
-This required adapting the input representation, robot-specific proprioceptive measurements, leg ordering conventions, contact labels, and data-processing pipeline.
+```bash
+git clone https://github.com/Masateemah123/ContactNet.git
+cd ContactNet
+pip install -r requirements.txt
 
-### 2. Progressive CNN-GRU architecture
+# Train (uses built-in synthetic quadruped trot sequences if ./data/go1/ is absent)
+PYTHONPATH=. python3 src/train_lightning.py --config configs/train.yaml
 
-Extension of the CNN-based feature extraction architecture through the integration of two GRU branches operating at different feature extraction stages.
+# Evaluate on test set
+PYTHONPATH=. python3 src/test.py --config_name configs/test.yaml
 
-The early GRU processes intermediate CNN features, while the late GRU processes higher-level CNN representations. Their outputs are combined through multi-scale temporal feature fusion before classification.
-
-### 3. Go1 proprioceptive data acquisition
-
-Collection of robot-state measurements from Unitree Go1 ROS bag recordings, providing the data foundation for training and evaluating the adapted contact estimation framework.
-
-### 4. Robot-specific data processing pipeline
-
-Development of a processing workflow for extracting and organizing joint states, end-effector kinematics, robot base pose, and contact labels from recorded ROS data.
-
-The pipeline includes coordinate-frame transformations, feature organization, leg reordering, contact-label encoding, and dataset generation.
-
-### 5. IMU-independent proprioceptive representation
-
-Development and evaluation of a 48-dimensional input representation comprising joint positions, joint velocities, body-frame foot positions, and body-frame foot velocities.
-
-IMU measurements are not included in the final network input representation.
-
-### 6. Model training and evaluation
-
-Implementation of the training and evaluation pipeline using PyTorch and PyTorch Lightning, with multi-class contact configuration prediction and individual-leg contact performance assessment.
+# Single-sequence inference
+PYTHONPATH=. python3 src/inference_one_seq.py --config configs/inference.yaml
+```
 
 ---
 
 ## Model Architecture
 
-ContactNet uses a **Progressive CNN-GRU architecture** that integrates convolutional feature extraction and recurrent temporal modelling.
-
-The architecture consists of three convolutional blocks and two GRU branches.
-
-The first GRU operates on intermediate representations extracted after the second convolutional block. The second GRU operates on higher-level representations extracted after the third convolutional block.
-
-The final temporal representations are concatenated and passed to a fully connected classification head.
-
-### Architecture Configuration
-
 | Component | Configuration |
-|---|---|
-| Input shape | 150 × 48 |
-| Input channels | 48 |
-| Temporal window | 150 samples |
-| Convolutional blocks | 3 |
-| CNN channel progression | 48 → 64 → 128 → 256 |
-| Early GRU hidden size | 64 |
-| Late GRU hidden size | 64 |
-| Fused representation | 128 features |
-| Classification head | 128 → 512 → 256 → 16 |
-| Output classes | 16 |
-
-### Network Structure
+| :--- | :--- |
+| Input shape | $150 \times 48$ ($0.15\text{ s}$ at $1\text{ kHz}$) |
+| Convolutional blocks | 3 ($48 \rightarrow 64 \rightarrow 128 \rightarrow 256$) |
+| Early GRU branch | Hidden size $64$ (after CNN Block 2) |
+| Late GRU branch | Hidden size $64$ (after CNN Block 3) |
+| Fused representation | $128$ features |
+| Classification head | $128 \rightarrow 512 \rightarrow 256 \rightarrow 16$ classes |
 
 ```text
-Input Sequence
-(B, 150, 48)
-       |
-       v
-   CNN Block 1
-   48 → 64
-       |
-       v
-   CNN Block 2
-   64 → 128
-       |
-       +----------------------+
-       |                      |
-       v                      |
-   Early GRU                  |
-   128 → 64                   |
-       |                      |
-       v                      |
-  Early Features              |
-       |                      |
-       |                 CNN Block 3
-       |                 128 → 256
-       |                      |
-       |                      v
-       |                   Late GRU
-       |                   256 → 64
-       |                      |
-       |                      v
-       |                 Late Features
-       |                      |
-       +----------+-----------+
-                  |
-                  v
-         Feature Concatenation
-             128 Features
-                  |
-                  v
-            Classifier
-          128 → 512 → 256
-                  |
-                  v
-             16 Classes
+Input Sequence (B, 150, 48)
+           |
+           v
+   CNN Block 1 (48 -> 64)
+           |
+           v
+   CNN Block 2 (64 -> 128)
+           |
+           +----------------------+
+           |                      |
+           v                      v
+  Early GRU (128 -> 64)   CNN Block 3 (128 -> 256)
+           |                      |
+           |                      v
+           |              Late GRU (256 -> 64)
+           |                      |
+           +----------+-----------+
+                      |
+                      v
+        Concatenation (128 Features)
+                      |
+                      v
+         Classifier (128 -> 512 -> 256)
+                      |
+                      v
+                  16 Classes
 ```
 
-### Input Representation
+### 48D Input Representation
 
-The network receives four groups of proprioceptive measurements:
-
-| Input Feature | Dimensions | Description |
-|---|---:|---|
-| Joint positions | 12 | Positions of the 12 actuated joints |
-| Joint velocities | 12 | Velocities of the 12 actuated joints |
-| Foot positions | 12 | Body-frame positions of the four feet |
-| Foot velocities | 12 | Body-frame velocities of the four feet |
-| **Total** | **48** | **Proprioceptive input features** |
-
-Each temporal input window contains 150 consecutive samples of these 48 features.
-
-### Output Representation
-
-The network performs 16-class classification.
-
-Each class represents one possible binary contact configuration of the four robot legs:
-
-- Four binary contact states.
-- Two possible states per leg: contact or no contact.
-- Sixteen possible four-leg configurations.
-
-The output logits represent the predicted contact configuration.
+| Feature Group | Dimensions | Description |
+| :--- | :---: | :--- |
+| Joint positions ($q$) | 12 | Actuated joint angles |
+| Joint velocities ($\dot{q}$) | 12 | Actuated joint angular velocities |
+| Foot positions ($p_f$) | 12 | Body-frame end-effector positions |
+| Foot velocities ($v_f$) | 12 | Body-frame end-effector velocities |
+| **Total** | **48** | **Leg-local proprioceptive features (IMU excluded)** |
 
 ---
 
-## Data Acquisition and Processing
+## Experimental Results & Sim-to-Real Analysis
 
-The ContactNet dataset was developed using proprioceptive measurements collected from Unitree Go1 ROS bag recordings.
+### 1. Simulated Architectural Comparison (Gazebo-ROS Noetic)
 
-The processing workflow converts recorded robot-state measurements into structured temporal datasets suitable for supervised learning.
+Evaluated on identical chronological splits across 12 terrains and 5 gaits ($T_w = 150$):
 
-### 1. ROS Bag Extraction
+| Model Architecture | Parameters | FLOPs | Validation F1 | Key Trade-off |
+| :--- | :---: | :---: | :---: | :--- |
+| **CNN (Baseline)** | 10.90M | 0.146G | 0.970 | High parameter count; lacks explicit sequence memory |
+| **GRU-only** | 2.06M | 0.420G | 0.980 | Strong temporal coherence; no spatial feature hierarchy |
+| **CNN-GRU (Deep / Serial)** | 691K | 0.620G | 0.940 | Early spatial compression masks short-duration impacts |
+| **CNN-GRU (Hierarchical)** | 691K | 0.850G | 0.960 | Parametric coupling and sequential overhead |
+| **ContactNet (Progressive)** | **691K** | **1.12G** | **0.980** | Multi-scale GRU fusion captures impact transients and stance dynamics |
 
-ROS bag recordings are processed using `bagpy` to extract robot-state measurements.
-
-The processing pipeline supports compressed `.zst` recordings through `zstandard`.
-
-The following ROS topics are extracted:
-
-| ROS Topic | Purpose |
-|---|---|
-| `/estimated_robot_state` | Robot joint states, end-effector measurements, base pose, and contact information |
-| `/gazebo/imu` | Recorded IMU measurements, processed separately from the final model inputs |
-
-Extracted measurements are initially exported into CSV files and subsequently organized into Parquet datasets.
-
-### 2. Proprioceptive Signal Extraction
-
-The following measurements are extracted from the robot-state recordings:
-
-- Joint positions: `joint_state.position`
-- Joint velocities: `joint_state.velocity`
-- End-effector positions: `ee_pos`
-- End-effector velocities: `ee_vel`
-- End-effector contact information: `ee_contact`
-- Base position: `base_pose.position`
-- Base orientation: `base_pose.orientation`
-
-The four legs are represented using their corresponding end-effector measurements.
-
-### 3. Coordinate-Frame Transformation
-
-End-effector positions and velocities are transformed from the world frame into the robot body frame.
-
-The transformation uses the robot's base position and orientation.
-
-Quaternion normalization and rotation matrices are used to perform the coordinate transformations.
-
-This produces body-frame foot positions and velocities for the four legs.
-
-### 4. Feature Organization
-
-The extracted signals are organized into four proprioceptive feature groups:
-
-- Joint positions.
-- Joint velocities.
-- Body-frame foot positions.
-- Body-frame foot velocities.
-
-The measurements are reordered according to the selected leg convention to maintain consistency between the input features and contact labels.
-
-### 5. Contact Label Generation
-
-The contact information extracted from `ee_contact` provides the reference contact states.
-
-The four binary leg-contact states are reordered according to the model's leg convention and encoded into 16 categorical contact configurations.
-
-### 6. Dataset Generation
-
-The processed measurements are saved as NumPy arrays for subsequent training and evaluation.
-
-| File | Description |
-|---|---|
-| `q.npy` | Joint positions |
-| `qd.npy` | Joint velocities |
-| `p.npy` | Body-frame foot positions |
-| `v.npy` | Body-frame foot velocities |
-| `contacts.npy` | Four-leg binary contact states |
-| `contacts_labels.npy` | Encoded 16-class contact labels |
-| `preprocessed_data.npy` | Concatenated 48-dimensional proprioceptive features |
-
-The resulting feature representation is used to construct temporal input sequences for the ContactNet training pipeline.
+| Simulation Test Metric | RF (Leg 0) | LF (Leg 1) | RH (Leg 2) | LH (Leg 3) | Mean |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Accuracy (%)** | 98.8% | 98.3% | 98.8% | 98.6% | **98.63%** |
+| **Precision (%)** | 98.5% | 97.9% | 98.9% | 98.3% | **98.40%** |
+| **Jaccard Index** | 0.975 | 0.968 | 0.977 | 0.973 | **0.973** |
+| **FPR / FNR (%)** | 1.01 / 1.50 | 1.18 / 2.15 | 1.17 / 1.15 | 1.11 / 1.71 | **1.12 / 1.63** |
 
 ---
 
-## Training Framework
+### 2. Domain-Gap Analysis: Why Removing the Base IMU (`54D -> 48D`) Improves Transfer
 
-The ContactNet training implementation uses:
+Ornstein-Uhlenbeck (OU) stochastic noise modeling and Power Spectral Density (PSD) analysis revealed severe terrain-coupled non-stationarity in base IMU signals between concrete and grass:
 
-- Python
-- PyTorch
-- PyTorch Lightning
-- NumPy
-- SciPy
+| OU Noise Parameter | Axis | Concrete (Rigid) | Grass (Compliant) | Domain Shift Impact |
+| :--- | :---: | :---: | :---: | :--- |
+| **White Noise ($\sigma_{\text{white}}$)** | Accel X ($\text{m/s}^2$) | 1.750 | 0.573 | $>3.0\times$ variance shift across terrains |
+| **White Noise ($\sigma_{\text{white}}$)** | Accel Z ($\text{m/s}^2$) | 5.260 | 1.720 | High-frequency impact ringing on rigid ground |
+| **White Noise ($\sigma_{\text{white}}$)** | Gyro Z ($\text{rad/s}$) | 0.760 | 0.096 | $\sim 7.9\times$ angular-rate vibration divergence |
+| **Bias ($\tau$ Component)** | Gyro Z ($\text{rad/s}$) | 0.130 | -0.004 | Non-stationary low-frequency gyroscope drift |
 
-### Training Configuration
-
-The implementation supports:
-
-- Multi-class focal loss.
-- Adam optimization.
-- Weight decay.
-- Gradient clipping.
-- Validation monitoring.
-- Model checkpoint selection.
-- Configurable learning-rate scheduling.
-
-The focal loss implementation uses a configurable focusing parameter, with a default gamma of 2.0.
-
-### Evaluation Metrics
-
-Performance is evaluated at both the contact-configuration level and the individual-leg level.
-
-Evaluation metrics include:
-
-- Multi-class contact configuration accuracy.
-- Individual-leg contact accuracy.
-- Per-leg precision and recall.
-- Per-leg F1-score.
-- Confusion matrices.
-- Classification reports.
-
-These metrics provide complementary information about the network's ability to identify complete contact configurations and estimate individual foot-contact states.
+Dropping the 6 base-IMU channels (`54D -> 48D`) eliminated inertial bias drift and stabilized zero-shot hardware deployment.
 
 ---
 
-## Research Publications
+### 3. Zero-Shot Real-World Hardware Evaluation (48D IMU-Free)
 
-### Conference Publication
+Two checkpoints with comparable Gazebo validation F1—**Model A (`Epoch 19`)** and **Model B (`Epoch 27`)**—were evaluated offline **without fine-tuning** on physical **Unitree Go1** and **Unitree Go2** hardware logs:
 
-**Comprehensive Review of Contact Estimation Methods for Legged Robots**
+#### Unitree Go1 Outdoor Multi-Terrain Trials
 
-Authors: Thema Masa, Vivian Suzano Medeiros, Marcelo Becker.
+| Terrain / Trial | Checkpoint | 16-Class Accuracy | Mean Per-Leg Accuracy | Mean L1 Error (Legs) | Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Concrete** (w/ Trot) | **Model A (`ckpt-19`)** | **76.29%** | **88.89%** | **0.445** | Leg-F1: **0.935**; Per-leg: `[90.5%, 89.3%, 88.6%, 87.2%]` |
+| **Concrete** (Standard) | **Model A (`ckpt-19`)** | **75.65%** | **88.21%** | **0.472** | Sharp rigid impacts preserve temporal alignment |
+| **Concrete** | Model B (`ckpt-27`) | 23.37% | 56.18% | 1.753 | Leg-F1: 0.509 |
+| **Grass** (Compliant) | **Model B (`ckpt-27`)** | **48.65%** | **71.29%** | **1.149** | Better captures damped, low-stiffness stance phases |
+| **Grass** (w/ Trot) | Model A (`ckpt-19`) | 11.19% | 50.74% | 1.970 | Macro F1 (base run): 0.642; underestimates long stance |
+| **Inclined Ramp** | **Model A (`ckpt-19`)** | **34.42%** | **73.64%** | **1.054** | Outperforms `ckpt-27` (`56.94%` mean leg acc.) |
+| **Force Plate** (w/ Trot) | **Model A (`ckpt-19`)** | **29.88%** | **52.34%** | 1.906 | Per-leg: `[49.8%, 51.9%, 56.7%, 51.0%]` |
+| **Asphalt** | **Model A (`ckpt-19`)** | **22.08%** | **57.76%** | **1.690** | Leg-F1: **0.618** vs. `0.559` (`ckpt-27`) |
 
-2025 Brazilian Conference on Robotics (CROS).
+#### Cross-Platform Generalization on Unitree Go2 (`Model A — ckpt-19`)
 
-[View publication on IEEE Xplore](https://ieeexplore.ieee.org/document/11066135/)
+| Go2 Locomotion Sequence | 16-Class Accuracy | Mean Per-Leg Accuracy | RF (Leg 0) | LF (Leg 1) | RH (Leg 2) | LH (Leg 3) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Stiff Run** (Rigid) | **73.43%** | **91.75%** | 93.64% | 91.37% | 87.13% | 94.85% |
+| **Soft Run** (Compliant) | **43.99%** | **81.75%** | 65.27% | 84.49% | 83.61% | 93.62% |
+| **Combined Stiff + Soft** | **62.71%** | **86.66%** | 84.77% | 89.67% | 78.28% | 93.93% |
+| **Soft Walk Stair** | **79.53%** | **93.32%** | 94.30% | 91.79% | 91.69% | 95.49% |
 
-### Master's Research
+#### Quantitative Domain-Gap Metrics (Concrete vs. Grass)
 
-**Master's Research — University of São Paulo (USP), Brazil**
-
-[View research record in the USP Digital Repository](https://repositorio.usp.br/item/003319254)
-
----
-
-## Original Framework and Acknowledgements
-
-ContactNet builds upon the open-source [Deep Contact Estimator](https://github.com/UMich-CURLY/deep-contact-estimator), developed by Tzu-Yuan Lin, Ray Zhang, Justin Yu, and Maani Ghaffari at the University of Michigan.
-
-The original implementation provided the CNN-based contact estimation foundation used as a starting point for this research. Its original work focused on the MIT Cheetah platform.
-
-ContactNet represents a subsequent adaptation and extension developed for the Unitree Go1. The present research includes the integration of recurrent temporal modelling, Go1-specific data acquisition and processing, a proprioceptive input representation, and independent model training and evaluation using Go1 recordings.
-
-The original implementation and its associated research are acknowledged as the foundation of this work. The ContactNet dataset and subsequent Go1-specific research contributions are distinct from the original UMich-CURLY dataset and implementation.
-
-### Original Publication
-
-Tzu-Yuan Lin, Ray Zhang, Justin Yu, and Maani Ghaffari.
-
-*Legged Robot State Estimation using Invariant Kalman Filtering and Learned Contact Events.*
-
-Proceedings of the 5th Conference on Robot Learning (CoRL), 2021.
-
-- [Original paper — OpenReview](https://openreview.net/forum?id=yt3tDB67lc5)
-- [Original source code — GitHub](https://github.com/UMich-CURLY/deep-contact-estimator)
-
-### Original Citation
-
-```bibtex
-@inproceedings{lin2021legged,
-  title={Legged Robot State Estimation using Invariant Kalman Filtering and Learned Contact Events},
-  author={Lin, Tzu-Yuan and Zhang, Ray and Yu, Justin and Ghaffari, Maani},
-  booktitle={5th Annual Conference on Robot Learning},
-  year={2021},
-  url={https://openreview.net/forum?id=yt3tDB67lc5}
-}
-```
+| Metric | Concrete (Rigid) | Grass (Compliant) | Gap ($\Delta$) | Physical Interpretation |
+| :--- | :---: | :---: | :---: | :--- |
+| **Domain Generalization Error (DGE) $\downarrow$** | **0.214** | 0.387 | `+0.173` | Larger latent feature shift on viscoelastic turf |
+| **Feature Transfer Robustness (FTR) $\uparrow$** | **94.1%** | 81.6% | `-12.5%` | Higher feature alignment retention on rigid ground |
+| **End-Point Error (EPE) $\downarrow$** | **0.031** | 0.067 | `+0.036` | Lower instantaneous contact-state deviation |
+| **Cross-Domain Contact Stability (CDCS) $\uparrow$** | **0.923** | 0.784 | `-0.139` | Higher temporal stance/swing consistency |
 
 ---
 
-## Technologies
+## Experimental Visual Diagnostics (Real-World Hardware)
 
-| Category | Technologies |
-|---|---|
-| Programming | Python |
-| Deep Learning | PyTorch, PyTorch Lightning |
-| Data Processing | NumPy, Pandas, SciPy |
-| Robotics Middleware | ROS |
-| Data Extraction | bagpy, zstandard |
-| Data Storage | CSV, Parquet, NumPy |
-| Neural Architectures | CNN, GRU, CNN-GRU |
-| Research Domain | Quadrupedal Robotics, Proprioceptive Contact Estimation |
+### 1. Per-Leg & 16-Class Confusion Matrices (Concrete vs. Grass)
+
+| **Concrete — Rigid (`Model 19`)** | **Grass — Compliant (`Model 27`)** |
+| :---: | :---: |
+| ![Concrete Confusion Matrices](figures/concrete_model19_confusion.png) | ![Grass Confusion Matrices](figures/GRASS_confusion.png) |
+
+*Per-leg binary confusion matrices (top) and 16-state configuration matrices (bottom). Rigid concrete preserves clean stance/swing separation across legs, whereas compliant grass introduces false-negative stance dropouts and diagonal trot dominance.*
+
+### 2. Stance-Phase Duration Distributions (Concrete vs. Grass)
+
+| **Concrete (`Model 19`)** | **Grass (`Model 27`)** |
+| :---: | :---: |
+| ![Concrete Contact Durations](figures/concrete_model19_durations.png) | ![Grass Contact Durations](figures/GRASS_durations.png) |
+
+*Distribution of continuous stance durations (in $1\text{ kHz}$ samples) comparing ground truth (green) against ContactNet predictions (red), illustrating short-duration stance fragmentation under attenuated ground-reaction impulses.*
+
+### 3. Touchdown Event Alignment & Chatter Diagnostics
+
+| **Concrete — Clean Transition Tracking** | **Grass — Chatter During Idle/Swing Gap** |
+| :---: | :---: |
+| ![Concrete Transition Timing](figures/concrete_model19_transitions.png) | ![Grass Transition Timing](figures/GRASS_transitions.png) |
+
+*Touchdown event detection across a 30-second (30,000-sample) hardware rollout. Rigid concrete cleanly tracks the non-contact gap between samples `26,000–28,000` (left), whereas compliant grass exhibits false-positive touchdown chatter across idle intervals (right).*
+
+---
+
+## Future Work
+
+1. **Viscoelastic Contact Modeling & Domain Randomization:** Train with variable ground stiffness, damping, and friction anisotropy in simulation to prevent early CNN filters from overfitting to rigid-body impact spikes.
+2. **Latent Domain Alignment:** Incorporate Maximum Mean Discrepancy (MMD) or adversarial feature alignment between simulated and real proprioceptive windows.
+3. **Temporal Post-Processing & Hysteresis Filtering:** Apply minimum-duration / hysteresis smoothing on predicted logits to eliminate short-duration stance fragmentation ($< 50\text{ ms}$) during quasi-static phases.
+4. **InEKF State Estimation Integration:** Fuse ContactNet's 48D IMU-free contact probabilities into an Invariant Extended Kalman Filter for drift-reduced legged odometry.
+
+---
+
+## Publications & Acknowledgments
+
+### Publications
+- **ContactNet: Proprioceptive Quadrupedal Foot Contact State Estimation and Sim-to-Real Domain Gap Analysis** — Masa Thema et al., *2026 IEEE Conference Publication*.
+- **Comprehensive Review of Contact Estimation Methods for Legged Robots** — Thema Masa, Vivian Suzano Medeiros, Marcelo Becker, *2025 Brazilian Conference on Robotics (CROS)* ([IEEE Xplore](https://ieeexplore.ieee.org/document/11066135/)).
+- **Master's Research — University of São Paulo (USP)** ([USP Digital Repository](https://repositorio.usp.br/item/003319254)).
+
+### Framework & Collaboration Attribution
+- **Foundational Research:** Builds upon [Deep Contact Estimator](https://github.com/UMich-CURLY/deep-contact-estimator) (Lin et al., *CoRL 2021*, UMich-CURLY).
+- **Lab Collaboration:** Preliminary multi-terrain experiments were conducted collaboratively with **Juliano Decico Negri** at **EESC-LabRoM** ([`EESC-LABRoM/contact-estimator-lars-2025`](https://github.com/EESC-LABRoM/contact-estimator-lars-2025)). This standalone repository contains my independent ContactNet architecture, PyTorch Lightning pipeline, and MIT-licensed data interface developed at **EESC/USP**.
+- **Funding:** Financed in part by **CAPES** (Finance Code 001), **ANP / Petrobras / EMBRAPII / FAFQ** (`2023/00013-7`, `2023/00016-6`), and **FAPESP** (`2025/03705-2`).
 
 ---
 
 ## Author
 
-**Masa Thema**
-
-Mechanical Engineering  
-University of São Paulo (USP)  
-São Carlos, Brazil
-
----
-
-*ContactNet — Progressive Temporal Learning for Proprioceptive Contact Estimation in Quadrupedal Robots.*
+**Masa Thema** — Mechanical Engineering, University of São Paulo (USP), São Carlos, Brazil
