@@ -1,0 +1,22 @@
+seed: 42
+data_folder: ./data/go1
+sample_rate_hz: 1000
+window_sec: 0.15
+batch_size: 64
+num_workers: 0
+shuffle: true
+
+init_lr: 0.0003
+weight_decay: 0.00001
+loss_type: focal
+focal_gamma: 2.0
+label_smoothing: 0.0
+slip_weight_factor: 3.0
+
+num_epoch: 30
+precision: 32
+grad_clip: 0.25
+early_stop_patience: 6
+save_top_k: 1
+model_save_path: ./checkpoints/contactnet_go1
+log_writer_path: ./logs

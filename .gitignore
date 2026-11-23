@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+checkpoints/
+logs/
+outputs/
+data/
+*.ckpt
+*.pt
+*.pth
+*.npy
+*.mat
+.DS_Store

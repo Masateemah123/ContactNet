@@ -1,0 +1,6 @@
+data_folder: ./data/go1
+window_size: 150
+batch_size: 64
+num_workers: 0
+use_gpu: true
+model_load_path: ./checkpoints/last.ckpt

@@ -1,0 +1,6 @@
+data_path: ./data/go1/test.npy
+label_path: ./data/go1/test_label.npy
+window_size: 150
+batch_size: 64
+model_load_path: ./checkpoints/last.ckpt
+mat_save_path: ./outputs/contactnet_predictions.mat
